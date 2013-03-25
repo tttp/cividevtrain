@@ -73,6 +73,48 @@ class CRM_Upgrade_Incremental_php_FourThree {
         CRM_Core_Error::fatal('Please reset the Drupal cache (Administer => Site Configuration => Performance => Clear cached data))');
       }
     }
+    // CRM-12155
+    if ($rev == '4.3.beta5') {
+      $query = "SELECT ceft.id FROM `civicrm_financial_trxn` cft
+LEFT JOIN civicrm_entity_financial_trxn ceft 
+ON ceft.financial_trxn_id = cft.id AND ceft.entity_table = 'civicrm_contribution'
+LEFT JOIN civicrm_contribution cc ON cc.id = ceft.entity_id AND ceft.entity_table = 'civicrm_contribution'
+WHERE cc.id IS NULL";
+
+      $dao = CRM_Core_DAO::executeQuery($query);
+      $isOrphanData = TRUE;
+      if (!$dao->N) {
+        $query = "SELECT cli.id FROM civicrm_line_item cli 
+LEFT JOIN civicrm_contribution cc ON cli.entity_id = cc.id AND cli.entity_table = 'civicrm_contribution'
+LEFT JOIN civicrm_participant cp ON cli.entity_id = cp.id AND cli.entity_table = 'civicrm_participant'
+WHERE CASE WHEN cli.entity_table = 'civicrm_contribution'
+THEN cc.id IS NULL 
+ELSE  cp.id IS NULL
+END";
+        $dao = CRM_Core_DAO::executeQuery($query);
+        if (!$dao->N) {          
+          $revPattern = '/^((\d{1,2})\.\d{1,2})\.(\d{1,2}|\w{4,7})?$/i';
+          preg_match($revPattern, $currentVer, $version);
+          if ($version[1] >= 4.3) {
+            $query = "SELECT cfi.id FROM civicrm_financial_item cfi 
+LEFT JOIN civicrm_entity_financial_trxn ceft ON ceft.entity_table = 'civicrm_financial_item' and cfi.id = ceft.entity_id
+WHERE ceft.entity_id IS NULL;";
+            $dao = CRM_Core_DAO::executeQuery($query);
+            if (!$dao->N) { 
+              $isOrphanData = FALSE;
+            }
+          }
+          else {
+            $isOrphanData = FALSE;            
+          }
+        }
+      }
+
+      if ($isOrphanData) {
+        $preUpgradeMessage = "</br> <strong>" . ts('Your database contains orphaned financial records related to deleted contributions. Refer to <a href="%1">this wiki page for instructions on repairing your database</a> so that you can run the upgrade successfully.
+        ', array( 1 => 'http://wiki.civicrm.org/confluence/display/CRMDOC43/Database+repair+for+4.3+upgrades')) . "</strong>";
+      }
+    }
   }
 
   /**
@@ -189,6 +231,7 @@ WHERE    entity_value = '' OR entity_value IS NULL
 
   function upgrade_4_3_beta2($rev) {
     $this->addTask(ts('Upgrade DB to 4.3.beta2: SQL'), 'task_4_3_x_runSql', $rev);
+
     // CRM-12002
     if (
       CRM_Core_DAO::checkTableExists('log_civicrm_line_item') &&
@@ -212,6 +255,17 @@ WHERE    entity_value = '' OR entity_value IS NULL
     // add indexes for civicrm_entity_financial_trxn
     // CRM-12141
     $this->addTask(ts('Check/Add indexes for civicrm_entity_financial_trxn'), 'task_4_3_x_checkIndexes', $rev);
+  }
+
+  function upgrade_4_3_beta5($rev) {
+    $this->addTask(ts('Upgrade DB to 4.3.beta5: SQL'), 'task_4_3_x_runSql', $rev);
+    // CRM-12205
+    if (
+      CRM_Core_DAO::checkTableExists('log_civicrm_financial_trxn') &&
+      CRM_Core_DAO::checkFieldExists('log_civicrm_financial_trxn', 'trxn_id')
+    ) {
+      CRM_Core_DAO::executeQuery('ALTER TABLE `log_civicrm_financial_trxn` CHANGE `trxn_id` `trxn_id` VARCHAR(255) NULL DEFAULT NULL');
+    }
   }
 
   //CRM-11636
@@ -789,7 +843,7 @@ AND TABLE_SCHEMA = '{$dbUf['database']}'";
    * @return bool TRUE for success
    */
   function task_4_3_x_checkIndexes(CRM_Queue_TaskContext $ctx) {
-    $query = "SHOW KEYS FROM  `civicrm_entity_financial_trxn` 
+    $query = "SHOW KEYS FROM  `civicrm_entity_financial_trxn`
 WHERE key_name IN ('UI_entity_financial_trxn_entity_table', 'UI_entity_financial_trxn_entity_id');";
     $dao = CRM_Core_DAO::executeQuery($query);
     if (!$dao->N) {
