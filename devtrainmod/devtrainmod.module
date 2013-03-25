@@ -1,0 +1,14 @@
+<?php
+function devtrainmod_civicrm_validateForm( $formName, &$fields, &$files, &$form, &$errors ) {
+    if ( $formName == "CRM_Contact_Form_Contact" ) {
+        $addressArray = &$fields['address'];
+        foreach ( $addressArray as $addressKey => $addressFields ) {
+            if ( isset( $addressFields['postal_code'] ) ) {
+                if ( !ctype_digit( substr( $addressFields['postal_code'], 0, 4 ) ) ) {
+                    $errors['address[' . $addressKey . '][postal_code]'] = "First four positions have to be numbers!";
+                }
+            }
+        }
+    }
+    return;
+}
