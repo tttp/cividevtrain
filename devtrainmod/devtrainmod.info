@@ -1,0 +1,6 @@
+name = Developer Training CiviCRM Gent
+description = Developer Training CiviCRM at Gent on 27 and 28 March 2013 - examples
+dependencies[] = civicrm
+package = CiviCRM
+core = 7.x
+version = 4.2.x
